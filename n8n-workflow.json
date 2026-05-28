@@ -1,0 +1,141 @@
+﻿{
+  "name": "CareFirst Health - Patient Appointment Confirmation",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "carefirst-intake",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Patient Intake Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [250, 300],
+      "webhookId": "carefirst-intake"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            { "id": "to-name", "name": "toName", "value": "={{ $json.patientName }}", "type": "string" },
+            { "id": "to-email", "name": "toEmail", "value": "={{ $json.patientEmail }}", "type": "string" },
+            { "id": "subject", "name": "emailSubject", "value": "Your {{ $json.concern }} Appointment Confirmation - CareFirst Health", "type": "string" },
+            { "id": "email-body", "name": "emailBody", "value": "={{ $json.aiDraftedEmail }}", "type": "string" },
+            { "id": "sender", "name": "senderEmail", "value": "={{ $json.senderEmail || 'madhurhita.ganguly@codeclouds.in' }}", "type": "string" },
+            { "id": "concern", "name": "concern", "value": "={{ $json.concern }}", "type": "string" },
+            { "id": "slot", "name": "appointmentSlot", "value": "={{ $json.preferredSlot }}", "type": "string" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "format-data",
+      "name": "Format Email Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "fromEmail": "={{ $json.senderEmail }}",
+        "toEmail": "={{ $json.toEmail }}",
+        "subject": "={{ $json.emailSubject }}",
+        "emailType": "text",
+        "message": "={{ $json.emailBody }}",
+        "options": {
+          "replyTo": "={{ $json.senderEmail }}"
+        }
+      },
+      "id": "send-email",
+      "name": "Send Confirmation Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [710, 300],
+      "credentials": {
+        "smtp": {
+          "id": "YOUR_SMTP_CREDENTIAL_ID",
+          "name": "SMTP Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://localhost:3000/api/carefirst/webhook",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "patientName", "value": "={{ $('Format Email Data').item.json.toName }}" },
+            { "name": "email", "value": "={{ $('Format Email Data').item.json.toEmail }}" },
+            { "name": "concern", "value": "={{ $('Format Email Data').item.json.concern }}" },
+            { "name": "appointmentSlot", "value": "={{ $('Format Email Data').item.json.appointmentSlot }}" },
+            { "name": "emailStatus", "value": "sent" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "callback-confirm",
+      "name": "Confirm Delivery to App",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [940, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"success\": true, \"message\": \"Email sent successfully to {{ $('Format Email Data').item.json.toEmail }}\" }",
+        "options": { "responseCode": 200 }
+      },
+      "id": "respond-success",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1170, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"success\": false, \"error\": \"Failed to process appointment\" }",
+        "options": { "responseCode": 500 }
+      },
+      "id": "respond-error",
+      "name": "Respond Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [940, 500]
+    }
+  ],
+  "connections": {
+    "Patient Intake Webhook": {
+      "main": [
+        [{ "node": "Format Email Data", "type": "main", "index": 0 }]
+      ]
+    },
+    "Format Email Data": {
+      "main": [
+        [{ "node": "Send Confirmation Email", "type": "main", "index": 0 }]
+      ]
+    },
+    "Send Confirmation Email": {
+      "main": [
+        [{ "node": "Confirm Delivery to App", "type": "main", "index": 0 }]
+      ]
+    },
+    "Confirm Delivery to App": {
+      "main": [
+        [{ "node": "Respond Success", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    { "name": "healthcare" },
+    { "name": "automation" },
+    { "name": "email" }
+  ],
+  "pinData": {}
+}
