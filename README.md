@@ -30,7 +30,7 @@ This workflow automates patient appointment confirmations for CareFirst Health w
    - AI-generated pre-visit instructions
    - Clinic location and contact info
    - HIPAA compliance footer
-5. **Notify Admin** (`n8n-nodes-base.gmail v2.2`): Sends an HTML table summary to `madhurhita.ganguly@gmail.com` with all patient booking details for internal tracking.
+5. **Notify Admin** (`n8n-nodes-base.gmail v2.2`): Sends an HTML table summary to `admin email` with all patient booking details for internal tracking.
 
 **Credentials Used:** Groq API for AI generation, Gmail OAuth2 for email delivery.
 
@@ -45,3 +45,4 @@ This workflow automates patient appointment confirmations for CareFirst Health w
 3. Create a `.env` file and add your n8n webhook URL:
    `CAREFIRST_N8N_WEBHOOK_URL=https://madhurhitaganguly.app.n8n.cloud/webhook/patient-intake`
 4. Run `npm run dev` to start the development server.
+
