@@ -1,6 +1,7 @@
 ﻿"use server";
 
 import { z } from "zod";
+import { bookAppointment } from "@/lib/db";
 
 const formSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters"),
@@ -9,6 +10,8 @@ const formSchema = z.object({
   concern: z.enum(["General Checkup", "Dental", "Ortho", "Mental Health"], {
     errorMap: () => ({ message: "Please select your primary concern" }),
   }),
+  appointmentDate: z.string().min(1, "Please select an appointment date"),
+  appointmentTime: z.string().min(1, "Please select an appointment time"),
   preferredSlot: z.string().min(1, "Please select your preferred appointment slot"),
 });
 
@@ -18,23 +21,6 @@ function getAgeGroup(age: number): string {
   if (age < 50) return "adult";
   if (age < 65) return "mature adult";
   return "senior";
-}
-
-function formatSlot(slot: string): string {
-  try {
-    const date = new Date(slot);
-    return date.toLocaleDateString("en-US", {
-      weekday: "long",
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-      hour12: true,
-    });
-  } catch {
-    return slot;
-  }
 }
 
 function generatePersonalizedEmail(data: {
@@ -95,8 +81,8 @@ function generatePersonalizedEmail(data: {
   };
 
   const details = concernDetails[data.concern] || concernDetails["General Checkup"];
-  const instructionsList = details.instructions.map((inst, i) => `• ${inst}`).join("\n");
-  const bringList = details.whatToBring.map((item) => `• ${item}`).join("\n");
+  const instructionsList = details.instructions.map((inst) => `\x07 ${inst}`).join("\n");
+  const bringList = details.whatToBring.map((item) => `\x07 ${item}`).join("\n");
 
   return `${firstName}, ${details.ageSpecific}
 
@@ -124,17 +110,31 @@ export async function submitCareFirstForm(
       email: formData.get("email"),
       age: formData.get("age"),
       concern: formData.get("concern"),
+      appointmentDate: formData.get("appointmentDate"),
+      appointmentTime: formData.get("appointmentTime"),
       preferredSlot: formData.get("preferredSlot"),
     };
 
     const validatedData = formSchema.parse(rawData);
 
-    // Simulate AI processing delay
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    // 1. Save to database with double-booking check
+    const dbResult = bookAppointment({
+      patientName: validatedData.name,
+      email: validatedData.email,
+      phone: "",
+      department: validatedData.concern,
+      appointmentDate: validatedData.appointmentDate,
+      appointmentTime: validatedData.appointmentTime,
+    });
 
+    if (!dbResult.success) {
+      return { success: false, error: dbResult.error };
+    }
+
+    // 2. Generate personalized email
     const aiDraftedEmail = generatePersonalizedEmail(validatedData);
 
-    // Send to n8n webhook if configured
+    // 3. Send to n8n webhook if configured
     const webhookUrl = process.env.CAREFIRST_N8N_WEBHOOK_URL;
 
     if (webhookUrl) {
@@ -167,7 +167,7 @@ export async function submitCareFirstForm(
 
     return {
       success: true,
-      message: `Thank you, ${validatedData.name.split(" ")[0]}! Your ${validatedData.concern.toLowerCase()} appointment has been confirmed. A detailed confirmation email has been sent to ${validatedData.email}.`,
+      message: `Thank you, ${validatedData.name.split(" ")[0]}! Your ${validatedData.concern.toLowerCase()} appointment has been confirmed for ${validatedData.appointmentDate} at ${validatedData.appointmentTime}. A detailed confirmation email has been sent to ${validatedData.email}.`,
       aiDraftedEmail,
     };
   } catch (error) {

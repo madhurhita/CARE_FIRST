@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { submitCareFirstForm } from "./actions";
 import { Button } from "@/components/ui/button";
 import {
@@ -39,6 +39,7 @@ import {
   Users,
   Star,
   CalendarCheck,
+  Calendar,
   FileText,
   Send,
 } from "lucide-react";
@@ -88,6 +89,23 @@ const stats = [
   { value: "4", label: "Specializations", icon: CalendarCheck },
 ];
 
+// Generate all 15-minute slots from 10:00 AM to 9:00 PM
+function generateAllSlots(): string[] {
+  const slots: string[] = [];
+  for (let hour = 10; hour <= 21; hour++) {
+    for (let min = 0; min < 60; min += 15) {
+      if (hour === 21 && min > 0) break;
+      const h12 = hour > 12 ? hour - 12 : hour === 0 ? 12 : hour;
+      const ampm = hour >= 12 ? "PM" : "AM";
+      const timeStr = `${h12}:${min.toString().padStart(2, "0")} ${ampm}`;
+      slots.push(timeStr);
+    }
+  }
+  return slots;
+}
+
+const ALL_SLOTS = generateAllSlots();
+
 export default function CareFirstPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [result, setResult] = useState<{
@@ -96,12 +114,63 @@ export default function CareFirstPage() {
     error?: string;
   } | null>(null);
   const [selectedConcern, setSelectedConcern] = useState("");
+  const [appointmentDate, setAppointmentDate] = useState("");
+  const [appointmentTime, setAppointmentTime] = useState("");
+  const [bookedSlots, setBookedSlots] = useState<string[]>([]);
+  const [availableSlots, setAvailableSlots] = useState<string[]>([]);
+  const [loadingSlots, setLoadingSlots] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
+
+  // Fetch booked slots whenever department or date changes
+  const fetchAvailableSlots = useCallback(async (dept: string, date: string) => {
+    if (!dept || !date) {
+      setAvailableSlots([]);
+      setBookedSlots([]);
+      setAppointmentTime("");
+      return;
+    }
+
+    setLoadingSlots(true);
+    setAppointmentTime("");
+
+    try {
+      const res = await fetch(`/api/carefirst/slots?department=${encodeURIComponent(dept)}&date=${encodeURIComponent(date)}`);
+      const data = await res.json();
+      const booked: string[] = data.bookedSlots || [];
+
+      // Always regenerate from the FULL list - never reuse previous filtered results
+      const freshSlots = ALL_SLOTS.filter((slot) => !booked.includes(slot));
+
+      console.log(`[Slots Debug] date=${date}, dept=${dept}, generatedCount=${ALL_SLOTS.length}, bookedCount=${booked.length}, availableCount=${freshSlots.length}`);
+
+      setBookedSlots(booked);
+      setAvailableSlots(freshSlots);
+    } catch (err) {
+      console.error("[Slots] Error fetching booked slots:", err);
+      // On error, show all slots as fallback
+      setAvailableSlots([...ALL_SLOTS]);
+      setBookedSlots([]);
+    } finally {
+      setLoadingSlots(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchAvailableSlots(selectedConcern, appointmentDate);
+  }, [selectedConcern, appointmentDate, fetchAvailableSlots]);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (!selectedConcern) {
       setResult({ success: false, error: "Please select your primary concern." });
+      return;
+    }
+    if (!appointmentDate) {
+      setResult({ success: false, error: "Please select an appointment date." });
+      return;
+    }
+    if (!appointmentTime) {
+      setResult({ success: false, error: "Please select an appointment time." });
       return;
     }
     setIsSubmitting(true);
@@ -110,11 +179,20 @@ export default function CareFirstPage() {
     const response = await submitCareFirstForm(null, formData);
     setResult(response);
     setIsSubmitting(false);
+
+    // Refresh available slots after successful booking
+    if (response.success) {
+      fetchAvailableSlots(selectedConcern, appointmentDate);
+    }
   };
 
   const resetForm = () => {
     setResult(null);
     setSelectedConcern("");
+    setAppointmentDate("");
+    setAppointmentTime("");
+    setAvailableSlots([]);
+    setBookedSlots([]);
     formRef.current?.reset();
   };
 
@@ -515,18 +593,68 @@ export default function CareFirstPage() {
                           </Select>
                         </div>
 
+                        {/* Appointment Date */}
                         <div className="space-y-2">
-                          <Label htmlFor="carefirst-slot" className="text-slate-700 font-semibold text-sm">
-                            Preferred Appointment Slot
+                          <Label htmlFor="carefirst-date" className="text-slate-700 font-semibold text-sm">
+                            <Calendar className="h-4 w-4 inline mr-1.5 text-emerald-500" />
+                            Appointment Date
                           </Label>
                           <Input
-                            id="carefirst-slot"
-                            name="preferredSlot"
-                            type="datetime-local"
+                            id="carefirst-date"
+                            name="appointmentDate"
+                            type="date"
+                            value={appointmentDate}
+                            onChange={(e) => setAppointmentDate(e.target.value)}
+                            min={new Date().toISOString().split("T")[0]}
                             required
                             disabled={isSubmitting}
                             className="h-11 bg-slate-50/50 border-slate-200 focus:bg-white rounded-xl"
                           />
+                        </div>
+
+                        {/* Appointment Time */}
+                        <div className="space-y-2">
+                          <Label htmlFor="carefirst-time" className="text-slate-700 font-semibold text-sm">
+                            <Clock className="h-4 w-4 inline mr-1.5 text-emerald-500" />
+                            Appointment Time
+                          </Label>
+                          <input type="hidden" name="appointmentTime" value={appointmentTime} />
+                          <input type="hidden" name="preferredSlot" value={appointmentDate && appointmentTime ? `${appointmentDate} ${appointmentTime}` : ""} />
+                          <Select
+                            value={appointmentTime}
+                            onValueChange={setAppointmentTime}
+                            disabled={isSubmitting || !selectedConcern || !appointmentDate || loadingSlots}
+                          >
+                            <SelectTrigger id="carefirst-time" className="h-11 w-full bg-slate-50/50 border-slate-200 rounded-xl">
+                              <SelectValue placeholder={
+                                loadingSlots
+                                  ? "Loading slots..."
+                                  : !selectedConcern || !appointmentDate
+                                  ? "Select department & date first"
+                                  : availableSlots.length === 0
+                                  ? "No slots available for this date"
+                                  : "Select Appointment Time"
+                              } />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {availableSlots.length === 0 && selectedConcern && appointmentDate && !loadingSlots ? (
+                                <SelectItem value="__none" disabled>
+                                  No slots available. Please choose another date.
+                                </SelectItem>
+                              ) : (
+                                availableSlots.map((slot) => (
+                                  <SelectItem key={slot} value={slot}>
+                                    {slot}
+                                  </SelectItem>
+                                ))
+                              )}
+                            </SelectContent>
+                          </Select>
+                          {selectedConcern && appointmentDate && !loadingSlots && availableSlots.length === 0 && (
+                            <p className="text-amber-600 text-xs font-medium mt-1">
+                              No slots available for this date. Please choose another date.
+                            </p>
+                          )}
                         </div>
 
                         <AnimatePresence>
@@ -641,5 +769,7 @@ export default function CareFirstPage() {
     </div>
   );
 }
+
+
 
 
