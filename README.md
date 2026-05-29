@@ -7,6 +7,7 @@ A modern, responsive Next.js landing page integrated with an automated n8n workf
 - **Automated Webhooks**: Sends form data directly to an n8n webhook upon submission.
 - **AI-Powered Instructions**: n8n uses the Groq API to draft personalized pre-visit instructions based on the patient's age and medical concern.
 - **Automated Emails**: Sends a beautifully formatted HTML confirmation email to the patient using Gmail SMTP.
+- **Admin Notifications**: Instantly sends an automated email summary to the administrator whenever a new patient books an appointment.
 
 ## 📸 Screenshots
 
@@ -45,4 +46,5 @@ This workflow automates patient appointment confirmations for CareFirst Health w
 3. Create a `.env` file and add your n8n webhook URL:
    `CAREFIRST_N8N_WEBHOOK_URL=https://madhurhitaganguly.app.n8n.cloud/webhook/patient-intake`
 4. Run `npm run dev` to start the development server.
+
 
